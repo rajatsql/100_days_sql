@@ -41,7 +41,7 @@ Each week contains **7 days**.
 
 ## 📂 Repository Structure
 
-text
+```text
 100-days-sql/
 │
 ├── Week_01/
