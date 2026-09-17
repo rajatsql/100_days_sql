@@ -640,8 +640,8 @@ The ultimate goal is to become significantly stronger at SQL problem-solving, qu
 
 ## 🚀 Challenge Status
 
-**Day 0 / 100**
+**Day 10 / 100**
 
-**0 / 500 SQL Problems**
+**50 / 500 SQL Problems**
 
 **🔥 100 Days. 500 Problems. One Query at a Time.**
