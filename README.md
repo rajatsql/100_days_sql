@@ -1,70 +1,44 @@
 # 🚀 100 Days of SQL
 
-A 100-day SQL practice challenge focused on improving SQL problem-solving, query writing, and real-world SQL skills.
+> **100 Days • 5 SQL Problems Every Day • 500 SQL Problems**
 
-## 🎯 Challenge Goal
+This repository documents my **100-day SQL challenge**.
 
-- 📅 Practice SQL for 100 days
-- 💻 Solve **5 SQL problems every day**
-- 📝 Upload the SQL file for each day
-- 🧠 Focus on SQL patterns and problem-solving
-- 💼 Prepare for SQL interviews and real-world development
-- 📈 Progress from intermediate concepts to advanced SQL
+The goal is simple: solve **5 SQL problems every day**, understand the patterns behind them, and build strong SQL problem-solving skills through consistent practice.
 
-## 📚 What I Will Practice
+Each day's SQL solutions are uploaded to this repository and organized week by week.
 
-The challenge will cover:
+---
 
-- SELECT, WHERE, ORDER BY
-- GROUP BY & HAVING
-- JOINs
-- Subqueries
-- Correlated subqueries
-- CTEs
-- Window functions
-- ROW_NUMBER()
-- RANK() & DENSE_RANK()
-- NULL handling
-- EXISTS & NOT EXISTS
-- UNION & UNION ALL
-- Aggregation
-- CASE expressions
-- Date & string functions
-- Advanced SQL
-- Query optimization
-- Real-world business scenarios
-- Interview-oriented SQL problems
+## 🎯 Challenge Goals
 
-## 📂 Repository Structure
+The main objectives of this challenge are:
 
-Each day contains 5 SQL problems and their solutions.
+- Solve **5 SQL problems every day**
+- Complete **500 SQL problems in 100 days**
+- Improve SQL problem-solving ability
+- Develop strong understanding of common SQL patterns
+- Improve query-writing speed and accuracy
+- Practice interview-oriented SQL problems
+- Solve real-world SQL scenarios
+- Improve debugging and query analysis skills
+- Build a permanent SQL revision repository
+
+The focus is not only on writing a query that works, but also on understanding **why it works and when the same pattern should be used**.
+
+---
+
+# 📅 Challenge Structure
+
+The challenge is divided into weeks.
+
+Each week contains **7 days**.
 
 text
-100-days-sql/
-│
-├── Week_01/
-│   ├── Day_01.sql
-│   ├── Day_02.sql
-│   ├── Day_03.sql
-│   ├── Day_04.sql
-│   ├── Day_05.sql
-│   └── Day_06.sql
-│   ├── Day_07.sql
-│
-├── Week_02/
-│   ├── Day_08.sql
-│   ├── Day_09.sql
-│   ├── Day_10.sql
-│   ├── Day_11.sql
-│   └── Day_12.sql
-│
-├── Week_03/
-│   └── ...
-│
-├── Week_04/
-│   └── ...
-│
-└── README.md
-└── README.md# 🚀 100 Days of SQL
-│
-└── README.md
+100 Days
+   ↓
+15 Weeks
+   ↓
+5 SQL Problems Every Day
+   ↓
+500 SQL Problems
