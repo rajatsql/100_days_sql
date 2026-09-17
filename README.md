@@ -107,14 +107,30 @@ The challenge will cover:
 Each day contains 5 SQL problems and their solutions.
 
 text
-100_days_sql/
+100-days-sql/
 │
-├── Day_01.sql
-├── Day_02.sql
-├── Day_03.sql
-├── Day_04.sql
-├── Day_05.sql
-├── ...
-├── Day_100.sql
+├── Week_01/
+│   ├── Day_01.sql
+│   ├── Day_02.sql
+│   ├── Day_03.sql
+│   ├── Day_04.sql
+│   ├── Day_05.sql
+│   └── Day_06.sql
+│
+├── Week_02/
+│   ├── Day_07.sql
+│   ├── Day_08.sql
+│   ├── Day_09.sql
+│   ├── Day_10.sql
+│   ├── Day_11.sql
+│   └── Day_12.sql
+│
+├── Week_03/
+│   └── ...
+│
+├── Week_04/
+│   └── ...
+│
+└── README.md
 │
 └── README.md
