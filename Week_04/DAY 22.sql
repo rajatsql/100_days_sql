@@ -1,0 +1,995 @@
+SQL CHALLENGE — DAY 22
+YOUR ANSWER + CORRECT ANSWER
+============================================================
+
+Q1 — CUSTOMER ORDER & PAYMENT QUALIFICATION
+============================================================
+
+RESULT: ⚠ PARTIALLY CORRECT
+
+## YOUR ANSWER:
+
+WITH 
+	PAYMENT_SUMMARY AS 
+		(
+		SELECT 
+			O.ORDER_ID,
+			COUNT(CASE WHEN P.STATUS = 'SUCCESS' THEN 1 END) SUCCESS_ORDER_COUNT
+		FROM ORDERS O 
+		LEFT JOIN PAYMENT P
+			   ON O.ORDER_ID = P.ORDER_ID
+		WHERE 
+				O.ORDER_DATE >= DATE '2026-11-01' AND 
+				O.ORDER_DATE < DATE '2026-12-01'
+		GROUP BY 
+			O.ORDER_ID
+		),
+
+	ORDER_SUMMARY AS 
+		(
+		SELECT 
+			O.CUSTOMER_ID,
+			O.ORDER_ID,
+			O.AMOUNT,
+			O.STATUS,
+			PS.SUCCESS_ORDER_COUNT,
+			O.STORE_ID		
+		FROM ORDERS O JOIN PAYMENT_SUMMARY PS
+		ON O.ORDER_ID = PS.ORDER_ID
+		),
+
+	CUSTOMER_SUMMARY AS 
+		(
+		SELECT 
+			CUSTOMER_ID,
+			COUNT(CASE WHEN STATUS = 'COMPLETED' THEN 1 END) AS COMPLETED_ORDER_COUNT,
+			SUM(CASE WHEN STATUS = 'CANCELLED' THEN 1 ELSE 0 END) AS CANCELLED_ORDER_COUNT,
+			SUM(CASE WHEN STATUS = 'COMPLETED' THEN AMOUNT ELSE 0 END) AS TOTAL_COMPLETED_AMOUNT,
+			COUNT(CASE WHEN STATUS = 'COMPLETED' THEN SUCCESS_ORDER_COUNT END) AS SUCCESS_ORDER_COUNT,
+			COUNT(CASE WHEN STATUS = 'COMPLETED' THEN STORE_ID END) AS STORE_COUNT
+		FROM ORDER_SUMMARY
+		GROUP BY CUSTOMER_ID
+		)
+
+	SELECT 
+		C.CUSTOMER_ID,
+		C.CUSTOMER_NAME,
+		CS.COMPLETED_ORDER_COUNT,
+		CS.TOTAL_COMPLETED_AMOUNT,
+		CS.STORE_COUNT
+	FROM CUSTOMER C 
+	JOIN CUSTOMER_SUMMARY CS
+	ON C.CUSTOMER_ID = CS.CUSTOMER_ID
+	WHERE CS.COMPLETED_ORDER_COUNT >= 4
+	AND CS.TOTAL_COMPLETED_AMOUNT > 100000
+	AND CS.STORE_COUNT >= 2
+	AND CS.SUCCESS_ORDER_COUNT >= 1
+	AND CANCELLED_ORDER_COUNT = 0;
+
+## CORRECT ANSWER:
+
+WITH PAYMENT_SUMMARY AS
+(
+	SELECT
+		O.ORDER_ID,
+		COUNT(CASE WHEN P.STATUS = 'SUCCESS' THEN 1 END) AS SUCCESS_PAYMENT_COUNT
+	FROM ORDERS O
+	LEFT JOIN PAYMENT P
+		ON O.ORDER_ID = P.ORDER_ID
+	GROUP BY O.ORDER_ID
+),
+ORDER_SUMMARY AS
+(
+	SELECT
+		O.CUSTOMER_ID,
+		O.ORDER_ID,
+		O.STORE_ID,
+		O.AMOUNT,
+		O.STATUS,
+		NVL(PS.SUCCESS_PAYMENT_COUNT, 0) AS SUCCESS_PAYMENT_COUNT
+	FROM ORDERS O
+	JOIN PAYMENT_SUMMARY PS
+		ON O.ORDER_ID = PS.ORDER_ID
+	WHERE O.ORDER_DATE >= DATE '2026-11-01'
+	  AND O.ORDER_DATE < DATE '2026-12-01'
+),
+CUSTOMER_SUMMARY AS
+(
+	SELECT
+		CUSTOMER_ID,
+		COUNT(CASE WHEN STATUS = 'COMPLETED' THEN 1 END) AS COMPLETED_ORDER_COUNT,
+		SUM(CASE WHEN STATUS = 'COMPLETED' THEN AMOUNT ELSE 0 END) AS TOTAL_COMPLETED_AMOUNT,
+		COUNT(DISTINCT CASE WHEN STATUS = 'COMPLETED' THEN STORE_ID END) AS STORE_COUNT,
+		COUNT(CASE WHEN STATUS = 'CANCELLED' THEN 1 END) AS CANCELLED_ORDER_COUNT,
+		COUNT(CASE
+			WHEN STATUS = 'COMPLETED'
+			 AND SUCCESS_PAYMENT_COUNT = 0
+			THEN 1
+		END) AS COMPLETED_WITHOUT_PAYMENT
+	FROM ORDER_SUMMARY
+	GROUP BY CUSTOMER_ID
+)
+SELECT
+	C.CUSTOMER_ID,
+	C.CUSTOMER_NAME,
+	CS.COMPLETED_ORDER_COUNT,
+	CS.TOTAL_COMPLETED_AMOUNT,
+	CS.STORE_COUNT
+FROM CUSTOMER C
+JOIN CUSTOMER_SUMMARY CS
+	ON C.CUSTOMER_ID = CS.CUSTOMER_ID
+WHERE C.STATUS = 'ACTIVE'
+  AND CS.COMPLETED_ORDER_COUNT >= 4
+  AND CS.TOTAL_COMPLETED_AMOUNT > 100000
+  AND CS.STORE_COUNT >= 2
+  AND CS.CANCELLED_ORDER_COUNT = 0
+  AND CS.COMPLETED_WITHOUT_PAYMENT = 0;
+
+## EXPLANATION:
+
+Your payment aggregation structure is good. You correctly started with ORDERS and LEFT JOINed PAYMENT, 
+so the payment calculation itself preserves orders with no payment.
+
+The main business-logic mistake is the condition:
+
+SUCCESS_ORDER_COUNT >= 1
+
+The requirement says:
+
+"Every completed order has at least one SUCCESS payment."
+
+If a customer has 4 completed orders and only 1 has a successful payment, your condition is still true. 
+The customer should be rejected.
+
+You need to count completed orders with ZERO successful payments and require that count to be zero.
+
+Your STORE_COUNT also counts completed orders, not distinct stores.
+
+You wrote:
+
+COUNT(CASE WHEN STATUS = 'COMPLETED' THEN STORE_ID END)
+
+It should be:
+
+COUNT(DISTINCT CASE WHEN STATUS = 'COMPLETED' THEN STORE_ID END)
+
+Finally, C.STATUS = 'ACTIVE' is missing from the final WHERE clause.
+
+## EXACT MISTAKES:
+
+1. SUCCESS_ORDER_COUNT >= 1 does not mean every completed order has SUCCESS payment.
+2. STORE_COUNT counts completed orders instead of distinct stores.
+3. C.STATUS = 'ACTIVE' is missing.
+
+## WHY THIS MISTAKE HAPPENED:
+
+You correctly recognized that payment existence had to be evaluated at order level, but you treated "at least one successful order" as equivalent to "every completed order has a successful payment."
+
+These are different business conditions.
+
+## KEY PATTERN / LESSON:
+
+For "EVERY X satisfies Y":
+
+Do not check:
+
+COUNT(Y) >= 1
+
+Instead check for violations:
+
+COUNT(X WHERE Y IS NOT TRUE) = 0
+
+For this problem:
+
+COMPLETED ORDERS WITH ZERO SUCCESS PAYMENT = 0
+
+
+============================================================
+Q2 — PRODUCT MONTHLY PERFORMANCE
+============================================================
+
+RESULT: ⚠ PARTIALLY CORRECT
+
+## YOUR ANSWER:
+
+WITH SALE_SUMMARY AS
+(
+	SELECT
+		S.PRODUCT_ID,
+		COUNT(*) AS TOTAL_TRANSACTIONS,
+		COUNT(CASE WHEN S.STATUS = 'COMPLETED' THEN 1 END) AS COMPLETED_TRANSACTIONS,
+		SUM(CASE WHEN S.STATUS = 'CANCELLED' THEN 1 ELSE 0 END) AS CANCELLED_TRANSACTIONS,
+		SUM(CASE WHEN S.STATUS = 'COMPLETED' THEN S.AMOUNT ELSE 0 END) AS COMPLETED_AMOUNT,
+		COUNT(DISTINCT CASE WHEN  S.STATUS = 'COMPLETED' THEN S.CUSTOMER_ID) AS CUSTOMER_COUNT
+	FROM 
+		SALES S
+	WHERE 
+		S.SALE_DATE >= DATE '2026-11-01' AND 
+		S.SALE_DATE < DATE '2026-12-01'
+	GROUP BY 
+		S.PRODUCT_ID
+)
+
+SELECT 
+	P.PRODUCT_ID,
+	P.PRODUCT_NAME,
+	SS.TOTAL_TRANSACTIONS,
+	SS.COMPLETED_TRANSACTIONS,
+	(SS.COMPLETED_TRANSACTIONS/SS.TOTAL_TRANSACTIONS)*100 AS COMPLETION_PERCENTAGE,
+	SS.COMPLETED_AMOUNT,
+	SS.CUSTOMER_COUNT
+FROM PRODUCT P 
+JOIN SALE_SUMMARY SS
+  ON P.PRODUCT_ID = SS.PRODUCT_ID
+WHERE
+	P.STATUS = 'ACTIVE'
+	AND SS.TOTAL_TRANSACTIONS >= 150
+	AND SS.COMPLETED_TRANSACTIONS >= 120
+	AND ((SS.COMPLETED_TRANSACTIONS/SS.TOTAL_TRANSACTIONS)*100) >= 80
+	AND SS.COMPLETED_AMOUNT > 2000000
+	AND SS.CUSTOMER_COUNT >= 10
+	AND SS.CANCELLED_TRANSACTIONS = 0;
+
+## CORRECT ANSWER:
+
+WITH SALE_SUMMARY AS
+(
+	SELECT
+		S.PRODUCT_ID,
+		COUNT(*) AS TOTAL_TRANSACTIONS,
+		COUNT(CASE WHEN S.STATUS = 'COMPLETED' THEN 1 END) AS COMPLETED_TRANSACTIONS,
+		COUNT(CASE WHEN S.STATUS = 'CANCELLED' THEN 1 END) AS CANCELLED_TRANSACTIONS,
+		SUM(CASE WHEN S.STATUS = 'COMPLETED' THEN S.AMOUNT ELSE 0 END) AS COMPLETED_AMOUNT,
+		COUNT(DISTINCT CASE
+			WHEN S.STATUS = 'COMPLETED'
+			THEN S.CUSTOMER_ID
+		END) AS CUSTOMER_COUNT
+	FROM SALES S
+	WHERE S.SALE_DATE >= DATE '2026-11-01'
+	  AND S.SALE_DATE < DATE '2026-12-01'
+	GROUP BY S.PRODUCT_ID
+)
+SELECT
+	P.PRODUCT_ID,
+	P.PRODUCT_NAME,
+	SS.TOTAL_TRANSACTIONS,
+	SS.COMPLETED_TRANSACTIONS,
+	(SS.COMPLETED_TRANSACTIONS / SS.TOTAL_TRANSACTIONS) * 100 AS COMPLETION_PERCENTAGE,
+	SS.COMPLETED_AMOUNT,
+	SS.CUSTOMER_COUNT
+FROM PRODUCT P
+JOIN SALE_SUMMARY SS
+	ON P.PRODUCT_ID = SS.PRODUCT_ID
+WHERE P.STATUS = 'ACTIVE'
+  AND SS.TOTAL_TRANSACTIONS >= 150
+  AND SS.COMPLETED_TRANSACTIONS >= 120
+  AND (SS.COMPLETED_TRANSACTIONS / SS.TOTAL_TRANSACTIONS) * 100 >= 80
+  AND SS.COMPLETED_AMOUNT > 2000000
+  AND SS.CUSTOMER_COUNT >= 10
+  AND SS.CANCELLED_TRANSACTIONS = 0;
+
+## EXPLANATION:
+
+Your business logic is correct.
+
+The problem is a syntax error in the conditional DISTINCT COUNT.
+
+You wrote:
+
+COUNT(DISTINCT CASE WHEN S.STATUS = 'COMPLETED' THEN S.CUSTOMER_ID)
+
+The CASE expression is missing END.
+
+Correct:
+
+COUNT(DISTINCT CASE
+	WHEN S.STATUS = 'COMPLETED'
+	THEN S.CUSTOMER_ID
+END)
+
+Because of this missing END, the query will not execute.
+
+## EXACT MISTAKES:
+
+1. Missing END in the CASE expression inside COUNT(DISTINCT).
+
+## WHY THIS MISTAKE HAPPENED:
+
+The conditional aggregation pattern is understood, but the CASE expression was not closed before closing COUNT.
+
+## KEY PATTERN / LESSON:
+
+For conditional DISTINCT:
+
+COUNT(DISTINCT CASE
+	WHEN condition
+	THEN column
+END)
+
+
+============================================================
+Q3 — LATEST SALARY VS DEPARTMENT AVERAGE
+============================================================
+
+RESULT: ✗ INCORRECT
+
+## YOUR ANSWER:
+
+WITH EMP_SUMMARY AS
+(
+	SELECT 
+		EMP_ID,
+		SALARY,
+		EFFECTIVE_DATE,
+		ROW_NUMBER() OVER(PARTITION BY EMP_ID ORDER BY EFFECTIVE_DATE DESC) AS RN
+	FROM EMPLOYEE_SALARY
+),
+SLARY_RNK AS
+(
+	SELECT 
+		EMP_ID,
+		(CASE WHEN RN = 1 THEN SALARY ELSE 0 END) AS LATEST_SALARY,
+		(CASE WHEN RN = 2 THEN SALARY ELSE 0 END) AS PREVIOUS_SALARY,
+		EFFECTIVE_DATE,
+		RN
+	FROM EMP_SUMMARY
+	WHERE RN <= 2
+),
+SALARY_AVG AS
+(
+	SELECT 
+		EMP_ID,
+		MAX(LATEST_SALARY) AS LATEST_SALARY,
+		MAX(PREVIOUS_SALARY) AS PREVIOUS_SALARY,
+		(MAX(LATEST_SALARY)+MAX(PREVIOUS_SALARY))/2 AS AVG_LATEST_SALARY
+	FROM SLARY_RNK
+	GROUP BY EMP_ID
+)
+
+SELECT 
+	EMP_ID,
+	PREVIOUS_SALARY,
+	LATEST_SALARY,
+	(LATEST_SALARY - PREVIOUS_SALARY)SALARY_INCREASE,
+	ROUND(((LATEST_SALARY - PREVIOUS_SALARY)/PREVIOUS_SALARY) *100,2) AS INCREASE_PERCENTAGE,
+	AVG_LATEST_SALARY
+FROM SALARY_AVG
+WHERE
+	LATEST_SALARY > PREVIOUS_SALARY
+	AND ROUND(((LATEST_SALARY - PREVIOUS_SALARY)/PREVIOUS_SALARY) *100,2) > 20
+
+## CORRECT ANSWER:
+
+WITH SALARY_RANKED AS
+(
+	SELECT
+		EMP_ID,
+		SALARY,
+		EFFECTIVE_DATE,
+		ROW_NUMBER() OVER
+		(
+			PARTITION BY EMP_ID
+			ORDER BY EFFECTIVE_DATE DESC
+		) AS RN
+	FROM EMPLOYEE_SALARY
+),
+LATEST_SALARY AS
+(
+	SELECT
+		EMP_ID,
+		SALARY AS LATEST_SALARY
+	FROM SALARY_RANKED
+	WHERE RN = 1
+),
+PREVIOUS_SALARY AS
+(
+	SELECT
+		EMP_ID,
+		SALARY AS PREVIOUS_SALARY
+	FROM SALARY_RANKED
+	WHERE RN = 2
+),
+EMPLOYEE_CHANGE AS
+(
+	SELECT
+		L.EMP_ID,
+		P.PREVIOUS_SALARY,
+		L.LATEST_SALARY,
+		L.LATEST_SALARY - P.PREVIOUS_SALARY AS SALARY_INCREASE,
+		ROUND(
+			((L.LATEST_SALARY - P.PREVIOUS_SALARY)
+			/ P.PREVIOUS_SALARY) * 100, 2
+		) AS INCREASE_PERCENTAGE
+	FROM LATEST_SALARY L
+	JOIN PREVIOUS_SALARY P
+		ON L.EMP_ID = P.EMP_ID
+),
+AVG_LATEST AS
+(
+	SELECT AVG(LATEST_SALARY) AS AVG_LATEST_SALARY
+	FROM LATEST_SALARY
+)
+SELECT
+	EC.EMP_ID,
+	EC.PREVIOUS_SALARY,
+	EC.LATEST_SALARY,
+	EC.SALARY_INCREASE,
+	EC.INCREASE_PERCENTAGE,
+	A.AVG_LATEST_SALARY
+FROM EMPLOYEE_CHANGE EC
+CROSS JOIN AVG_LATEST A
+WHERE EC.LATEST_SALARY > EC.PREVIOUS_SALARY
+  AND EC.LATEST_SALARY > A.AVG_LATEST_SALARY
+  AND EC.INCREASE_PERCENTAGE < 20;
+
+## EXPLANATION:
+
+There are three major logic problems.
+
+First, your AVG_LATEST_SALARY is not the average latest salary of all employees.
+
+You calculated:
+
+(MAX(LATEST_SALARY) + MAX(PREVIOUS_SALARY)) / 2
+
+That creates an average between each employees latest and previous salary.
+
+The requirement is:
+
+1. Find latest salary for every employee.
+2. Calculate AVG(latest salary) across all employees.
+3. Compare each employees latest salary against that overall average.
+
+Second, the required comparison is missing:
+
+LATEST_SALARY > AVG_LATEST_SALARY
+
+Your query never performs this comparison.
+
+Third, the salary increase condition is reversed.
+
+Question:
+
+Salary increase is < 20%
+
+You wrote:
+
+> 20
+
+It must be:
+
+< 20
+
+## EXACT MISTAKES:
+
+1. AVG_LATEST_SALARY is calculated at the wrong grain.
+2. Missing latest salary > overall average latest salary condition.
+3. > 20 should be < 20.
+4. Average is calculated per employee instead of across all employees.
+
+## WHY THIS MISTAKE HAPPENED:
+
+You correctly identified the latest and previous salary records, but then reused those two rows to calculate the average.
+
+The phrase "average latest salary of all employees" requires a second aggregation across employees.
+
+## KEY PATTERN / LESSON:
+
+When a question says:
+
+"greater than the average of all employees"
+
+think:
+
+LATEST ROW PER EMPLOYEE
+↓
+AVG(latest rows)
+↓
+COMPARE EACH EMPLOYEE TO THAT VALUE
+
+
+============================================================
+Q4 — STORE REVENUE VS STORE AVERAGE
+============================================================
+
+RESULT: ✗ INCORRECT
+
+## YOUR ANSWER:
+
+WITH 
+	PRODUCT_SUMMARY AS 
+	(
+		SELECT 
+			S.STORE_ID,
+			S.PRODUCT_ID,
+			SUM(AMOUNT) AS PRODUCT_REVENUE
+		FROM SALES S
+		WHERE 
+			S.SALE_DATE >= DATE '2026-11-01' AND 
+			S.SALE_DATE < DATE '2026-12-01'
+		GROUP BY 
+			S.STORE_ID,
+			S.PRODUCT_ID
+		),	
+	STORE_AVG AS 
+	(
+		SELECT 
+			S.STORE_ID,
+			AVG(AMOUNT) AS STORE_AVG_PRODUCT_REVENUE
+		FROM SALES S
+		WHERE 
+			S.SALE_DATE >= DATE '2026-11-01' AND 
+			S.SALE_DATE < DATE '2026-12-01'
+		GROUP BY 
+			S.STORE_ID
+	    )
+
+	SELECT 
+		S.STORE_ID,
+		S.STORE_NAME,
+		PS.PRODUCT_ID,
+		PS.PRODUCT_REVENUE,
+		SV.STORE_AVG_PRODUCT_REVENUE
+	FROM STORE S 
+	JOIN PRODUCT_SUMMARY PS
+	  ON S.STORE_ID = PS.STORE_ID
+	JOIN STORE_AVG SV
+	  ON S.STORE_ID = SV.STORE_ID
+	WHERE
+		PS.PRODUCT_REVENUE > SV.STORE_AVG_PRODUCT_REVENUE;
+
+## CORRECT ANSWER:
+
+WITH PRODUCT_SUMMARY AS
+(
+	SELECT
+		S.STORE_ID,
+		S.PRODUCT_ID,
+		SUM(S.AMOUNT) AS PRODUCT_REVENUE
+	FROM SALES S
+	WHERE S.SALE_DATE >= DATE '2026-11-01'
+	  AND S.SALE_DATE < DATE '2026-12-01'
+	  AND S.STATUS = 'COMPLETED'
+	GROUP BY
+		S.STORE_ID,
+		S.PRODUCT_ID
+),
+STORE_AVG AS
+(
+	SELECT
+		PS.STORE_ID,
+		AVG(PS.PRODUCT_REVENUE) AS STORE_AVG_PRODUCT_REVENUE
+	FROM PRODUCT_SUMMARY PS
+	GROUP BY PS.STORE_ID
+)
+SELECT
+	S.STORE_ID,
+	S.STORE_NAME,
+	PS.PRODUCT_ID,
+	PS.PRODUCT_REVENUE,
+	SA.STORE_AVG_PRODUCT_REVENUE
+FROM STORE S
+JOIN PRODUCT_SUMMARY PS
+	ON S.STORE_ID = PS.STORE_ID
+JOIN STORE_AVG SA
+	ON S.STORE_ID = SA.STORE_ID
+WHERE PS.PRODUCT_REVENUE > SA.STORE_AVG_PRODUCT_REVENUE;
+
+## EXPLANATION:
+
+You correctly understood that this is a two-stage aggregation problem.
+
+Your first CTE correctly calculates:
+
+STORE_ID + PRODUCT_ID
+→ PRODUCT_REVENUE
+
+The problem is the second CTE.
+
+You wrote:
+
+AVG(AMOUNT)
+
+That calculates the average of individual sales transactions.
+
+The requirement is the average of product-level revenue:
+
+PRODUCT_REVENUE
+→ AVG(PRODUCT_REVENUE) per store
+
+You also forgot the required:
+
+STATUS = 'COMPLETED'
+
+condition in PRODUCT_SUMMARY.
+
+## EXACT MISTAKES:
+
+1. AVG(AMOUNT) averages raw sales rows instead of product revenue.
+2. Missing STATUS = 'COMPLETED'.
+3. STORE_AVG should be built from PRODUCT_SUMMARY.
+
+## WHY THIS MISTAKE HAPPENED:
+
+You correctly identified that two aggregation stages were needed, but both stages were independently reading from SALES.
+
+The second stage must consume the result of the first stage.
+
+## KEY PATTERN / LESSON:
+
+For:
+
+"average of aggregated values"
+
+use:
+
+DETAIL
+↓
+GROUP BY lower grain
+↓
+METRIC
+↓
+AVG(METRIC)
+
+
+============================================================
+Q5 — LEAD-LEVEL CUSTOMER ORDER RECONCILIATION
+============================================================
+
+RESULT: ⚠ PARTIALLY CORRECT
+
+## YOUR ANSWER:
+
+WITH PAYMENT_SUMMARY AS 
+(
+	SELECT 
+		O.ORDER_ID,
+		SUM(CASE WHEN P.STATUS = 'SUCCESS' THEN P.PAYMENT_AMOUNT ELSE 0 END) AS TOTAL_PAID_AMOUNT,
+        COUNT( DISTINCT CASE WHEN P.STATUS = 'SUCCESS' THEN O.ORDER_ID  END) AS SUCCESS_PAYMENT_ORDER_COUNT
+	FROM 
+		ORDERS O LEFT JOIN PAYMENT P
+		ON O.ORDER_ID = P.ORDER_ID
+	GROUP BY 
+		O.ORDER_ID
+),
+ORDER_SUMMARY AS 
+(
+	SELECT 
+		O.ORDER_ID,
+		O.CUSTOMER_ID,
+		O.STORE_ID,
+		O.AMOUNT,
+		O.STATUS,
+		PS.TOTAL_PAID_AMOUNT,
+        SUCCESS_PAYMENT_ORDER_COUNT
+	FROM 
+		ORDERS O JOIN PAYMENT_SUMMARY PS
+		ON O.ORDER_ID = PS.ORDER_ID
+	WHERE 
+		O.ORDER_DATE >= DATE '2026-11-01' AND 
+		O.ORDER_DATE < DATE '2026-12-01'
+),
+CUSTOMER_SUMMARY AS 
+(
+	SELECT
+		OS.CUSTOMER_ID,
+		COUNT(CASE WHEN OS.STATUS = 'COMPLETED' THEN 1 END) AS COMPLETED_ORDER_COUNT,
+		SUM(CASE WHEN OS.STATUS = 'CANCELLED' THEN 1 ELSE 0 END) AS CANCELLED_ORDER_COUNT,
+        SUM(CASE WHEN OS.STATUS = 'COMPLETED' THEN OS.AMOUNT ELSE 0 END) AS TOTAL_ORDER_AMOUNT,
+        SUM(CASE WHEN OS.STATUS = 'COMPLETED' THEN OS.TOTAL_PAID_AMOUNT ELSE 0 END) AS TOTAL_PAID_AMOUNT,
+        SUM(CASE WHEN OS.STATUS = 'COMPLETED' THEN OS.SUCCESS_PAYMENT_ORDER_COUNT ELSE 0 END) AS SUCCESS_PAYMENT_ORDER_COUNT,
+        COUNT(DISTINCT CASE WHEN OS.STATUS = 'COMPLETED' THEN OS.STORE_ID END) AS STORE_COUNT,
+        SUM(CASE WHEN OS.STATUS = 'COMPLETED' AND OS.TOTAL_PAID_AMOUNT >= OS.AMOUNT THEN 1 ELSE 0 END)AS PAID_ORDER_COUNT,
+        SUM(CASE WHEN OS.STATUS = 'COMPLETED' AND OS.TOTAL_PAID_AMOUNT > 0 
+            AND OS.TOTAL_PAID_AMOUNT < OS.AMOUNT THEN 1 ELSE 0 END)AS PARTIALLY_PAID_ORDER_COUNT,
+        SUM(CASE WHEN OS.STATUS = 'COMPLETED' AND  OS.TOTAL_PAID_AMOUNT = 0 THEN 1 ELSE 0 END)AS UNPAID_ORDER_COUNT
+    FROM ORDER_SUMMARY OS
+    GROUP BY OS.CUSTOMER_ID 
+)
+
+SELECT
+	C.CUSTOMER_ID,
+	C.CUSTOMER_NAME,
+	CS.COMPLETED_ORDER_COUNT,
+	CS.TOTAL_ORDER_AMOUNT,
+	CS.TOTAL_PAID_AMOUNT,
+	CS.STORE_COUNT,
+	CS.UNPAID_ORDER_COUNT,
+	CS.PARTIALLY_PAID_ORDER_COUNT,
+	CS.PAID_ORDER_COUNT,
+	CS.SUCCESS_PAYMENT_ORDER_COUNT,
+	(CS.TOTAL_ORDER_AMOUNT - CS.TOTAL_PAID_AMOUNT)
+	AS OUTSTANDING_AMOUNT
+ FROM CUSTOMER C JOIN CUSTOMER_SUMMARY CS 
+ ON C.CUSTOMER_ID = CS.CUSTOMER_ID
+ WHERE C.STATUS = 'ACTIVE'
+ AND CS.COMPLETED_ORDER_COUNT >=6
+ AND CS.CS.TOTAL_ORDER_AMOUNT >150000
+ AND CS.STORE_COUNT >=2
+ AND CS.TOTAL_PAID_AMOUNT < CS.TOTAL_ORDER_AMOUNT
+ AND CS.UNPAID_ORDER_COUNT >= 2
+ AND CS.PARTIALLY_PAID_ORDER_COUNT >= 2
+ AND CS.PAID_ORDER_COUNT >=2
+ AND CS.SUCCESS_PAYMENT_ORDER_COUNT >= 4
+ AND CS.CANCELLED_ORDER_COUNT = 0;
+
+## CORRECT ANSWER:
+
+WITH PAYMENT_SUMMARY AS
+(
+	SELECT
+		O.ORDER_ID,
+		SUM(CASE
+			WHEN P.STATUS = 'SUCCESS'
+			THEN P.PAYMENT_AMOUNT
+			ELSE 0
+		END) AS TOTAL_PAID_AMOUNT
+	FROM ORDERS O
+	LEFT JOIN PAYMENT P
+		ON O.ORDER_ID = P.ORDER_ID
+	GROUP BY O.ORDER_ID
+),
+ORDER_SUMMARY AS
+(
+	SELECT
+		O.ORDER_ID,
+		O.CUSTOMER_ID,
+		O.STORE_ID,
+		O.AMOUNT,
+		O.STATUS,
+		NVL(PS.TOTAL_PAID_AMOUNT, 0) AS TOTAL_PAID_AMOUNT
+	FROM ORDERS O
+	LEFT JOIN PAYMENT_SUMMARY PS
+		ON O.ORDER_ID = PS.ORDER_ID
+	WHERE O.ORDER_DATE >= DATE '2026-11-01'
+	  AND O.ORDER_DATE < DATE '2026-12-01'
+),
+CUSTOMER_SUMMARY AS
+(
+	SELECT
+		CUSTOMER_ID,
+		COUNT(CASE WHEN STATUS = 'COMPLETED' THEN 1 END) AS COMPLETED_ORDER_COUNT,
+		SUM(CASE WHEN STATUS = 'COMPLETED' THEN AMOUNT ELSE 0 END) AS TOTAL_ORDER_AMOUNT,
+		SUM(CASE WHEN STATUS = 'COMPLETED' THEN TOTAL_PAID_AMOUNT ELSE 0 END) AS TOTAL_PAID_AMOUNT,
+		COUNT(DISTINCT CASE WHEN STATUS = 'COMPLETED' THEN STORE_ID END) AS STORE_COUNT,
+		SUM(CASE WHEN STATUS = 'CANCELLED' THEN 1 ELSE 0 END) AS CANCELLED_ORDER_COUNT,
+		SUM(CASE
+			WHEN STATUS = 'COMPLETED'
+			 AND TOTAL_PAID_AMOUNT = 0
+			THEN 1 ELSE 0
+		END) AS UNPAID_ORDER_COUNT,
+		SUM(CASE
+			WHEN STATUS = 'COMPLETED'
+			 AND TOTAL_PAID_AMOUNT > 0
+			 AND TOTAL_PAID_AMOUNT < AMOUNT
+			THEN 1 ELSE 0
+		END) AS PARTIALLY_PAID_ORDER_COUNT,
+		SUM(CASE
+			WHEN STATUS = 'COMPLETED'
+			 AND TOTAL_PAID_AMOUNT >= AMOUNT
+			THEN 1 ELSE 0
+		END) AS PAID_ORDER_COUNT,
+		COUNT(CASE
+			WHEN STATUS = 'COMPLETED'
+			 AND TOTAL_PAID_AMOUNT > 0
+			THEN ORDER_ID
+		END) AS SUCCESS_PAYMENT_ORDER_COUNT
+	FROM ORDER_SUMMARY
+	GROUP BY CUSTOMER_ID
+)
+SELECT
+	C.CUSTOMER_ID,
+	C.CUSTOMER_NAME,
+	CS.COMPLETED_ORDER_COUNT,
+	CS.TOTAL_ORDER_AMOUNT,
+	CS.TOTAL_PAID_AMOUNT,
+	CS.STORE_COUNT,
+	CS.UNPAID_ORDER_COUNT,
+	CS.PARTIALLY_PAID_ORDER_COUNT,
+	CS.PAID_ORDER_COUNT,
+	CS.SUCCESS_PAYMENT_ORDER_COUNT,
+	CS.TOTAL_ORDER_AMOUNT - CS.TOTAL_PAID_AMOUNT AS OUTSTANDING_AMOUNT
+FROM CUSTOMER C
+JOIN CUSTOMER_SUMMARY CS
+	ON C.CUSTOMER_ID = CS.CUSTOMER_ID
+WHERE C.STATUS = 'ACTIVE'
+  AND CS.COMPLETED_ORDER_COUNT >= 6
+  AND CS.TOTAL_ORDER_AMOUNT > 150000
+  AND CS.STORE_COUNT >= 2
+  AND CS.TOTAL_PAID_AMOUNT < CS.TOTAL_ORDER_AMOUNT
+  AND CS.UNPAID_ORDER_COUNT >= 2
+  AND CS.PARTIALLY_PAID_ORDER_COUNT >= 2
+  AND CS.PAID_ORDER_COUNT >= 2
+  AND CS.SUCCESS_PAYMENT_ORDER_COUNT >= 4
+  AND CS.CANCELLED_ORDER_COUNT = 0;
+
+## EXPLANATION:
+
+This is a clear improvement over Day 21.
+
+You correctly followed the required architecture:
+
+PAYMENT
+→ payment total per ORDER
+→ ORDER_SUMMARY
+→ CUSTOMER_SUMMARY
+→ final customer qualification
+
+You also correctly implemented:
+- one row per ORDER in PAYMENT_SUMMARY
+- successful-payment total
+- store count at customer level
+- UNPAID classification
+- PARTIALLY PAID classification
+- PAID classification
+- final customer-level conditions
+
+The main error is a syntax error:
+
+CS.CS.TOTAL_ORDER_AMOUNT
+
+It must be:
+
+CS.TOTAL_ORDER_AMOUNT
+
+Because of this, the final query does not execute.
+
+Your SUCCESS_PAYMENT_ORDER_COUNT concept is also reasonable because PAYMENT_SUMMARY is already one row per ORDER. 
+It can simply be derived from TOTAL_PAID_AMOUNT > 0 in the customer aggregation, which is clearer.
+
+## EXACT MISTAKES:
+
+1. `CS.CS.TOTAL_ORDER_AMOUNT` is invalid.
+2. SUCCESS_PAYMENT_ORDER_COUNT is unnecessarily calculated in PAYMENT_SUMMARY.
+3. NVL/COALESCE is useful defensive handling for missing payment totals.
+4. LEFT JOIN from ORDERS to PAYMENT_SUMMARY makes the row-preservation intent clearer.
+
+## WHY THIS MISTAKE HAPPENED:
+
+The overall grain design is improving, but the final query was submitted without a complete alias/syntax check.
+
+## KEY PATTERN / LESSON:
+
+For reconciliation:
+
+PAYMENT
+→ aggregate to ORDER
+→ attach to ORDER
+→ classify ORDER
+→ aggregate to CUSTOMER
+→ qualify CUSTOMER
+
+This is the correct production-style architecture.
+
+
+============================================================
+DAY 22 FINAL RESULT
+============================================================
+
+FULLY CORRECT: 0
+PARTIALLY CORRECT: 3
+WRONG: 2
+
+STRICT SCORE:
+0 / 5 = 0.00%
+
+EFFECTIVE ACCURACY:
+(0 + 3 × 0.5) / 5 = 30.00%
+
+
+============================================================
+DAY 22 — CORE LESSON
+============================================================
+
+Q5 shows a meaningful structural improvement over Day 21.
+
+You are now much closer to preserving the correct business grain through:
+
+ORDER
+→ CUSTOMER
+
+The main gap is now complete implementation.
+
+You often identify the correct SQL pattern, but one final condition, grain decision, or syntax error prevents the query from becoming fully correct.
+
+
+============================================================
+DAY 22 — PRIORITY LESSONS
+============================================================
+
+1. "EVERY" condition:
+   Find violations and require violation count = 0.
+
+2. Conditional DISTINCT:
+   COUNT(DISTINCT CASE WHEN condition THEN column END)
+
+3. Two-stage aggregation:
+   DETAIL
+   → ENTITY METRIC
+   → AVG/SUM/MAX OF ENTITY METRIC
+
+4. Latest + overall average:
+   Find latest row per employee
+   → calculate average across all latest rows
+   → compare employee against that average.
+
+5. Reconciliation:
+   PAYMENT
+   → ORDER
+   → CUSTOMER
+
+6. Final syntax check:
+   CASE END
+   aliases
+   JOIN ON
+   commas
+   column qualification
+   parentheses
+
+
+============================================================
+NO REWRITE PRACTICE
+============================================================
+
+
+# CUMULATIVE STATUS THROUGH DAY 22
+
+Historical Day 1–14
+* Correct: 30
+* Partial: 29
+* Wrong: 10
+* Questions: 70
+
+### Day 15
+* Correct: 1
+* Partial: 2
+* Wrong: 2
+
+### Day 16
+* Correct: 3
+* Partial: 1
+* Wrong: 1
+
+### Day 17
+* Correct: 0
+* Partial: 2
+* Wrong: 3
+
+### Day 18
+* Correct: 0
+* Partial: 0
+* Wrong: 5
+
+### Day 19
+* Correct: 0
+* Partial: 4
+* Wrong: 1
+
+### Day 20
+* Correct: 0
+* Partial: 3
+* Wrong: 2
+
+### Day 21
+* Correct: 1
+* Partial: 2
+* Wrong: 2
+
+### Day 22
+* Correct: 0
+* Partial: 3
+* Wrong: 2
+
+### CUMULATIVE
+* **Correct: 35**
+* **Partial: 46**
+* **Wrong: 28**
+* **Questions: 110**
+
+> The historical Day 1–7 baseline contains a one-question classification-count inconsistency, so the category counts do not sum to the 110-question total. The historical baseline is preserved rather than silently changed.
+
+### CUMULATIVE STRICT SCORE
+**35 / 110 = 31.82%**
+
+### CUMULATIVE EFFECTIVE ACCURACY
+**(35 + 46 × 0.5) / 110 = 52.73%**
